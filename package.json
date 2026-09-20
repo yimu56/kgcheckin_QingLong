@@ -1,0 +1,21 @@
+{
+  "name": "kgcheckin-qinglong",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "酷狗概念版 VIP 自动签到（青龙面板版，零依赖直连）",
+  "scripts": {
+    "sign": "node kg_sign.js",
+    "login:qr": "node kg_login_qr.js",
+    "login:phone": "node kg_login_phone.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yimu56/kgcheckin_QingLong.git"
+  },
+  "author": "yimu56",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16"
+  }
+}
