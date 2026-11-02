@@ -35,15 +35,31 @@
 | 名称 | 随便填 |
 | 链接 | `https://github.com/yimu56/kgcheckin_QingLong.git` |
 | 分支 | `main` |
-| 白名单 | `kg_` |
+| 白名单 | 留空（空 = 全量同步） |
+| 自动添加任务 | **关闭**（重要，见下方说明） |
+| 依赖文件 | `config\.json`（可选，见下方说明） |
 | 定时任务 | 留空即可 |
 
 或者命令行：
 
 ```bash
-ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" "config\.json"
+ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "" "" "config\.json"
 ```
 
+> ⚠️ **拉库后任务列表会多出一堆任务。** 本仓库不是纯任务仓库：除 3 个签到脚本外，
+> `lib/`、`api/`、`test/` 下还有 30 多个 `.js`（库文件与测试）。青龙会把每个 `.js`
+> 都当成脚本登记成定时任务，一次拉库可能多出 30 多个。处理办法：
+>
+> 1. 订阅里**关闭「自动添加任务」**，拉库只更新文件、不再自动建任务；
+> 2. 三个任务手动建一次即可：
+>    `task <目录>/kg_sign.js`、`task <目录>/kg_login_qr.js`、`task <目录>/kg_login_phone.js`
+>    （`<目录>` 是拉库后的实际目录名，如 `yimu56_kgcheckin_QingLong`）；
+> 3. 已经多出来的任务在「定时任务」里删掉即可——它们都是空跑（库文件只有导出、没有执行逻辑），
+>    不影响签到。
+>
+> 白名单别填 `kg_` 之类：部分版本的白名单是「同步文件」的过滤器而非「登记任务」的过滤器，
+> 填了会让 `lib/`、`api/` 拉不下来，表现为「未找到酷狗接口目录」。留空最稳。
+>
 > ⚠️ 仓库里的 `api/` 目录**不能删**，里面是签到要用的酷狗接口（已精简过，只有 66 KB）。
 >
 > ⚠️ 部分青龙版本的订阅只同步 `.js` 文件（「文件扩展名」默认 `js`），
@@ -60,7 +76,7 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" "config
    ```bash
    docker exec -it qinglong bash -c "cd /ql/scripts && npm i qrcode"
    ```
-2. 新建任务 → 命令填 `task kgcheckin_QingLong/kg_login_qr.js` → 手动运行
+2. 新建任务 → 命令填 `task yimu56_kgcheckin_QingLong/kg_login_qr.js` → 手动运行
 3. 打开任务日志，用酷狗音乐 APP 扫里面的二维码并点确认
 4. 登录成功会自动写入环境变量 `USERINFO`
 
@@ -69,7 +85,7 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" "config
 
 ### 方式二：手机号登录
 
-1. 添加环境变量 `KG_PHONE` = 手机号，运行 `task kgcheckin_QingLong/kg_login_phone.js`，短信会收到验证码
+1. 添加环境变量 `KG_PHONE` = 手机号，运行 `task yimu56_kgcheckin_QingLong/kg_login_phone.js`，短信会收到验证码
 2. 添加环境变量 `KG_CODE` = 验证码，**再运行一次**同一个脚本完成登录
 
 > 一个手机号绑定了多个酷狗账号时登录会失败，请改用扫码登录。
@@ -134,8 +150,11 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" "config
 青龙「定时任务 → 新建任务」：
 
 - 名称：酷狗签到
-- 命令：`task kgcheckin_QingLong/kg_sign.js`
+- 命令：`task yimu56_kgcheckin_QingLong/kg_sign.js`
 - 定时规则：`10 1 * * *`（每天北京时间 01:10）
+
+> 目录名是「作者_仓库名」，拉库后固定为 `yimu56_kgcheckin_QingLong`；
+> 如果订阅时自定义了别名，把命令里的目录名换成别名即可（面板「脚本管理」里能看到实际目录名）。
 
 > 脚本自己按北京时间判断日期，容器时区是 UTC 也没关系。
 > 建议在凌晨跑，抢在手动领取之前，避免和 APP 里当天名额冲突。
@@ -164,6 +183,19 @@ A：先跑一次登录脚本，或手动在 `USERINFO` 里填 `[{"userid":"xxx",
 
 **Q：报「未找到酷狗接口目录」？**
 A：`api/` 目录丢了，删掉任务重新拉一次库。
+
+**Q：拉库后多出几十个定时任务？**
+A：正常现象。青龙会把仓库里每个 `.js` 都登记成任务，而 `lib/`、`api/`、`test/`
+下还有 30 多个库文件与测试。处理：
+
+1. 「定时任务」里删掉多余任务，只留这三条（都是空跑，删了不影响签到）：
+   - `task yimu56_kgcheckin_QingLong/kg_sign.js` — 签到，每天跑
+   - `task yimu56_kgcheckin_QingLong/kg_login_qr.js` — 扫码登录，用一次
+   - `task yimu56_kgcheckin_QingLong/kg_login_phone.js` — 手机号登录，用一次
+2. 回到订阅，关闭「自动添加任务」，以后拉库只更新文件，不会再自动建任务。
+
+白名单改成 `kg_` 不一定管用（部分版本的白名单过滤的是「同步文件」而不是「登记任务」，
+填了反而会把 `lib/`、`api/` 拉不下来），详见「一、拉库」。
 
 **Q：报 `Cannot find module './config.json'`？**
 A：青龙订阅默认只同步 `.js` 文件，`api/util/config.json` 被落下了。
@@ -200,8 +232,8 @@ A：日志里会带服务端给的原因，常见两种：
 
 ## 测试
 
-仓库自带离线测试（随机延迟取值、失败原因识别、通知渠道），全部通过 `node:assert`
-实现，不需要联网、不需要安装任何包：
+仓库自带离线测试（随机延迟取值、失败原因识别、通知渠道、配置兜底、接口重试），
+全部通过 `node:assert` 实现，不需要联网、不需要安装任何包：
 
 ```bash
 npm test              # 或 node test/run-all.js

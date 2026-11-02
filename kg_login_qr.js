@@ -81,8 +81,10 @@ async function main() {
   const deadline = Date.now() + timeoutSec * 1000;
   let loggedIn = false;
   let expired = false;
+  let round = 0;
 
   while (Date.now() < deadline) {
+    round++;
     const res = await call('login_qr_check', { cookie: {}, key: qrcode });
     const status = res?.data?.status;
 
@@ -100,7 +102,8 @@ async function main() {
     if (status === 2) {
       console.log('[信息] 已扫码，等待 APP 上点击确认...');
     }
-    await delay(3000);
+    // 前 10 轮 3 秒问一次（尽快响应扫码），之后放慢到 5 秒，减少无意义的轮询
+    await delay(round <= 10 ? 3000 : 5000);
   }
 
   if (!loggedIn && !expired) {
