@@ -14,7 +14,7 @@
 
 const { call } = require('./lib/kgapi');
 const { readUserInfo, saveUserInfo } = require('./lib/qlenv');
-const { maskIdentifier } = require('./lib/safelog');
+const { maskIdentifier, errorTextOf, summarizeResponse } = require('./lib/safelog');
 const { tryRequireAny } = require('./lib/deps');
 
 const QRCode = tryRequireAny([
@@ -56,9 +56,9 @@ async function main() {
 
   const keyResp = await call('login_qr_key', { cookie: {} });
   if (keyResp?.status !== 1 || !keyResp?.data?.qrcode) {
-    console.log('[失败] 获取二维码失败：');
-    console.dir(keyResp, { depth: null });
-    throw new Error('获取二维码密钥失败');
+    const hint = errorTextOf(keyResp);
+    console.log(`[失败] 获取二维码失败：${JSON.stringify(summarizeResponse(keyResp))}`);
+    throw new Error(`获取二维码密钥失败${hint ? `：${hint}` : ''}`);
   }
 
   const qrcode = keyResp.data.qrcode;

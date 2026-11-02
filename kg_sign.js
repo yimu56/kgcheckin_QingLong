@@ -5,6 +5,8 @@
  *   USERINFO / KG_USERINFO   账号信息 JSON 数组，如 [{"userid":"123","token":"xxx"}]
  *   KG_CLAIM_TIMES           每天最多领取次数，默认 8
  *   KG_CLAIM_INTERVAL        每次领取间隔（秒），默认 30
+ *   KG_RANDOM_DELAY_MIN      启动后随机延迟下限（分钟），默认 1
+ *   KG_RANDOM_DELAY_MAX      启动后随机延迟上限（分钟），默认 60；两者都为 0 时关闭随机延迟
  *   KG_REFRESH_WEEKDAY       周几刷新 token（0=周日），默认 0，设为 -1 关闭
  *   KG_NOTIFY                通知方式：both / ql / custom / none，默认 both
  *   QL_CLIENT_ID / QL_CLIENT_SECRET   可选，用于自动回写青龙环境变量
@@ -15,6 +17,7 @@
 const { call, cookieOf } = require('./lib/kgapi');
 const { readUserInfo, saveUserInfo } = require('./lib/qlenv');
 const { sendNotify } = require('./lib/notify');
+const { pickRandomDelayMs } = require('./lib/schedule');
 const { maskDisplayName, maskIdentifier, summarizeResponse } = require('./lib/safelog');
 
 const LOG = {
@@ -47,6 +50,33 @@ function intEnv(name, fallback) {
   return raw !== undefined && raw !== '' && !Number.isNaN(n) ? n : fallback;
 }
 
+function formatClock(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+/**
+ * 定时触发后的随机等待，把签到时刻从固定时刻打散（自 ScriptCat 版回移）。
+ *
+ * @returns {Promise<number>} 实际等待的毫秒数（0 表示没有等待）
+ */
+async function waitRandomDelay() {
+  const minMin = intEnv('KG_RANDOM_DELAY_MIN', 1);
+  const maxMin = intEnv('KG_RANDOM_DELAY_MAX', 60);
+  const ms = pickRandomDelayMs(minMin, maxMin);
+
+  if (!ms) {
+    LOG.info('随机延迟为 0，触发后立即开始签到');
+    return 0;
+  }
+
+  const at = new Date(beijingNow().getTime() + ms);
+  const minutes = Math.round((ms / 60000) * 10) / 10;
+  LOG.info(`随机等待 ${minutes} 分钟再签到（预计 ${formatClock(at)} 开始）`);
+  LOG.info('等待时长来自环境变量 KG_RANDOM_DELAY_MIN / KG_RANDOM_DELAY_MAX，都设为 0 即可关闭');
+  await delay(ms);
+  return ms;
+}
+
 async function main() {
   const { users, source } = readUserInfo();
 
@@ -54,6 +84,9 @@ async function main() {
     throw new Error('未配置账号：请在青龙环境变量 USERINFO 中填入 [{"userid":"xxx","token":"xxx"}]，或先运行 kg_login_qr.js 登录');
   }
   LOG.info(`共读取到 ${users.length} 个账号（来源：${source || '未知'}）`);
+
+  // 先随机等待一段时间再签到，避免每天都在同一时刻发起请求
+  await waitRandomDelay();
 
   const today = beijingNow();
   const date = formatDate(today);

@@ -75,6 +75,8 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" ""
 | `USERINFO` | ✅ | 账号数组，登录脚本会自动写入；也可手填 `[{"userid":"xxx","token":"xxx"}]` |
 | `KG_CLAIM_TIMES` | | 每天最多领取次数，默认 `8` |
 | `KG_CLAIM_INTERVAL` | | 每次领取间隔（秒），默认 `30` |
+| `KG_RANDOM_DELAY_MIN` | | 启动后随机延迟下限（分钟），默认 `1` |
+| `KG_RANDOM_DELAY_MAX` | | 随机延迟上限（分钟），默认 `60`；两者都设 `0` 关闭随机延迟 |
 | `KG_REFRESH_WEEKDAY` | | 周几刷新 token，`0`=周日（默认），`-1` 关闭 |
 | `KG_NOTIFY` | | 通知方式：`both`（默认）/ `ql` / `custom` / `none` |
 | `KG_APPEND` | | 登录时是否追加到已有账号列表，默认追加，填 `否` 覆盖 |
@@ -92,7 +94,7 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" ""
 | 企业微信机器人 | `WECOM_BOT_KEY` |
 | 钉钉机器人 | `DINGTALK_BOT_KEY`（可选加签 `DINGTALK_SECRET`） |
 | 飞书机器人 | `FEISHU_BOT_KEY` |
-| 云湖机器人 | `YUNHU_BOT_KEY` |
+| 云湖机器人 | `YUNHU_BOT_TOKEN` + `YUNHU_RECV_ID`（可选 `YUNHU_RECV_TYPE`） |
 | Server酱 | `SERVERCHAN_SENDKEY` |
 | PushPlus | `PUSHPLUS_TOKEN`（可选群组 `PUSHPLUS_TOPIC`） |
 | Telegram | `TG_BOT_TOKEN` + `TG_CHAT_ID` |
@@ -100,7 +102,16 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" ""
 | Discord | `DISCORD_WEBHOOK` |
 | 邮箱 SMTP | `MAIL_HOST` / `MAIL_PORT` / `MAIL_USER` / `MAIL_PASS` / `MAIL_TO` |
 
-`KG_NOTIFY=both`（默认）时会**同时**走青龙自带的 `sendNotify`（面板里配置的推送方式）和上面这些自有渠道；怕刷屏就改成 `ql` 或 `custom`。
+> 云湖机器人走的是官方开放接口 `chat-go.jwzhd.com/open-apis/v1/bot/send`，需要三项：
+> **token**、**接收方 ID**、**接收方类型**（`user` 或 `group`，默认 `user`）。
+> token 在云湖控制台的「机器人发送消息链接」里，形如 `.../bot/send?token=xxxx`，取 `token=` 后那串；
+> 接收方 ID 发给用户填 userId，发到群填 groupId。旧变量名 `YUNHU_BOT_KEY` 仍兼容，
+> 但缺少 `YUNHU_RECV_ID` 时该渠道会发送失败并给出提示。
+>
+> 该接口成功时返回 `{"code":1,"msg":"success"}`——这里的 `code` 为 `1` 是成功语义，
+> 与常见「`code` 为 `0` 才成功」的接口不同。排查推送问题时不必被这个 `1` 误导。
+
+`KG_NOTIFY=both`（默认）时会**同时**走青龙自带的 `sendNotify`（面板里配置的推送方式）和上面这些自有渠道；怕刷屏就改成 `ql` 或 `custom`。推送前会先打印一行「已装载渠道：…」（只列渠道名、不打印密钥），方便区分「没配置」和「发送失败」。
 
 ## 四、token 自动刷新（可选）
 
@@ -122,6 +133,11 @@ ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" ""
 
 > 脚本自己按北京时间判断日期，容器时区是 UTC 也没关系。
 > 建议在凌晨跑，抢在手动领取之前，避免和 APP 里当天名额冲突。
+>
+> 脚本触发后默认先随机等 1–60 分钟再签到（任务日志会写明等待时长与预计开始时刻，
+> 例如「随机等待 23 分钟再签到（预计 01:33:00 开始）」），把每天的请求时刻打散，
+> 避免长期固定在同一秒。不需要随机延迟时把 `KG_RANDOM_DELAY_MIN` 和
+> `KG_RANDOM_DELAY_MAX` 都设为 `0` 即可。
 
 ## 目录结构
 
@@ -130,7 +146,8 @@ kgcheckin_QingLong/
 ├── kg_sign.js          签到主脚本
 ├── kg_login_qr.js      扫码登录
 ├── kg_login_phone.js   手机号登录
-├── lib/                共用模块（http / 依赖兜底 / 环境变量 / 通知 / 脱敏）
+├── lib/                共用模块（http / 依赖兜底 / 环境变量 / 通知 / 脱敏 / 随机延迟）
+├── test/               离线测试（npm test，不需要联网和第三方包）
 └── api/                精简版酷狗接口（from KuGouMusicApi，不可删）
 ```
 
@@ -151,6 +168,33 @@ A：先到酷狗 APP「活动中心 → 天天签到领 VIP」看看当天是不
 **Q：签到脚本要装依赖吗？**
 A：不用。axios、pako 缺失时会自动用 Node 内置模块顶上（有/无依赖两种情况都测过）。
 只有「在日志里显示二维码图案」才需要 `qrcode`。
+
+**Q：签到时刻每天都不一样？**
+A：正常。脚本触发后会先随机等 1–60 分钟再签到（环境变量 `KG_RANDOM_DELAY_MIN` /
+`KG_RANDOM_DELAY_MAX` 可调，都设 `0` 关闭），用来把请求时刻打散。
+等待时长会写进任务日志。想让时刻固定，把两个值都设为 `0` 即可。
+
+**Q：手动运行时想立刻开始？**
+A：把 `KG_RANDOM_DELAY_MIN`、`KG_RANDOM_DELAY_MAX` 都设为 `0`，再运行任务。
+
+**Q：手机号登录失败？**
+A：日志里会带服务端给的原因，常见两种：
+
+- 「验证码错误或已过期」→ 验证码只有几分钟有效期，重新运行一次发送验证码，
+  收到后立刻填 `KG_CODE` 并再次运行
+- 「该手机号绑定了多个账号」→ 接口限制，只能改用扫码登录
+
+手机号要填 **11 位纯数字**，不带 `+86`、空格或横线。日志里会显示这次用的手机号
+（打码后）以及来源环境变量。
+
+## 测试
+
+仓库自带离线测试（随机延迟取值、失败原因识别、通知渠道），全部通过 `node:assert`
+实现，不需要联网、不需要安装任何包：
+
+```bash
+npm test              # 或 node test/run-all.js
+```
 
 ## 致谢
 

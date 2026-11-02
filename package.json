@@ -1,10 +1,11 @@
 {
   "name": "kgcheckin-qinglong",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "commonjs",
   "description": "酷狗概念版 VIP 自动签到（青龙面板版，零依赖直连）",
   "scripts": {
+    "test": "node test/run-all.js",
     "sign": "node kg_sign.js",
     "login:qr": "node kg_login_qr.js",
     "login:phone": "node kg_login_phone.js"
