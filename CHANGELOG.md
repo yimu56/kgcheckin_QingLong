@@ -2,6 +2,27 @@
 
 本项目所有值得记录的改动都写在这里。版本号遵循语义化版本。
 
+## [1.1.1] - 2026-11-02
+
+### 修复
+
+- **面板上报 `Cannot find module './config.json'`，登录脚本起不来。**
+  青龙订阅的「文件扩展名」过滤默认只同步 `.js` 文件，
+  `api/util/config.json` 不会被拉到面板机上，
+  而 `api/util/helper.js` 等三个文件是按 `require('./config.json')` 硬引用的，
+  文件一缺就 MODULE_NOT_FOUND。
+  现改为 `require('./config')`，由新增的 `api/util/config.js` 统一加载：
+  优先读同目录的 `config.json`，文件缺失或内容损坏时自动改用内置默认值
+  （与仓库内 `config.json` 逐字段一致，并有测试锁定），
+  日志里提示一行「使用内置默认配置」，功能不受影响。
+  仍建议在订阅的「依赖文件」栏填 `config\.json` 把文件补齐，见 README「一、拉库」。
+
+### 新增
+
+- **`test/api_config.test.js`**：模拟青龙只同步 `.js` 的结果（缺 `config.json`）
+  跑整条加载链断言不崩、内置默认值与 `config.json` 逐字段一致、
+  api/ 下不残留 `require('./config.json')`。
+
 ## [1.1.0] - 2026-11-02
 
 自 [kgcheckin_ScriptCat](https://github.com/yimu56/kgcheckin_ScriptCat) 版回移一批修复与功能。

@@ -1,4 +1,4 @@
-const config = require('./config.json');
+const config = require('./config');
 const { apiver, appid, wx_appid, wx_lite_appid, srcappid, clientver, liteAppid, liteClientver } = config;
 const wx_secret = process.env.KUGOU_WX_SECRET || config.wx_secret;
 const wx_lite_secret = process.env.KUGOU_WX_LITE_SECRET || config.wx_lite_secret;

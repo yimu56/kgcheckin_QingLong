@@ -41,10 +41,16 @@
 或者命令行：
 
 ```bash
-ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" ""
+ql repo https://github.com/yimu56/kgcheckin_QingLong.git "main" "kg_" "" "config\.json"
 ```
 
 > ⚠️ 仓库里的 `api/` 目录**不能删**，里面是签到要用的酷狗接口（已精简过，只有 66 KB）。
+>
+> ⚠️ 部分青龙版本的订阅只同步 `.js` 文件（「文件扩展名」默认 `js`），
+> `api/util/config.json` 会被落下。补救办法任选其一：
+> ① 订阅的「依赖文件」栏填 `config\.json`（命令行拉库则是上面命令的最后一个参数）；
+> ② 什么都不改——脚本内置了同一套默认配置，`config.json` 缺失时自动兜底，
+>    只在日志里提示一行「使用内置默认配置」，功能不受影响。
 
 ## 二、获取账号
 
@@ -158,6 +164,11 @@ A：先跑一次登录脚本，或手动在 `USERINFO` 里填 `[{"userid":"xxx",
 
 **Q：报「未找到酷狗接口目录」？**
 A：`api/` 目录丢了，删掉任务重新拉一次库。
+
+**Q：报 `Cannot find module './config.json'`？**
+A：青龙订阅默认只同步 `.js` 文件，`api/util/config.json` 被落下了。
+当前版本已内置同一套默认配置兜底，出现该提示不影响功能；
+若想把文件补齐，见「一、拉库」小节里的两种补救办法。
 
 **Q：日志里「token过期或账号不存在」？**
 A：token 失效，重新跑一次登录脚本即可。
