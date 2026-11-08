@@ -100,6 +100,9 @@ const createRequest = (options) => {
       headers: Object.assign({}, options?.headers || {}, headers),
       withCredentials: true,
       responseType: options.responseType,
+      // 装了真 axios 时也必须有限时；内置的 axios shim 自带 15s 超时，
+      // 这里不传 timeout 会让真实 axios 无限挂起，青龙任务可能一直卡着不退出。
+      timeout: 15000,
     };
 
     const proxyConfig = resolveProxy();
@@ -139,12 +142,16 @@ const createRequest = (options) => {
 
       if (response.data?.status === 0 || (response.data?.error_code && response.data.error_code !== 0)) {
         answer.status = 502;
+        answer.networkError = false; // 服务端明确返回的业务失败，body 可原样交给上层判断
         reject(answer);
       } else {
         answer.status = 200;
         resolve(answer);
       }
     } catch (e) {
+      // 网络错误 / HTTP 4xx / 超时会走到这里。必须打上标记：
+      // 否则上层 lib/kgapi.js 会把这个「错误摘要」当成正常业务响应返回，
+      // 既不触发重试，又会让签到脚本把 ECONNRESET 误判成 token 过期。
       const responseBody = e?.response?.data;
       const responseSummary = responseBody && typeof responseBody === 'object'
         ? {
@@ -156,6 +163,7 @@ const createRequest = (options) => {
           }
         : {};
       answer.status = 502;
+      answer.networkError = true;
       answer.body = {
         status: 0,
         msg: responseSummary.msg || e?.message || 'request failed',

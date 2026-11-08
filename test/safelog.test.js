@@ -77,5 +77,18 @@ console.log('\n4) summarizeResponse');
   check('数字/字符串 data 同样保留', s.data, 'ok');
 }
 
+/* ---------- 5. 网络错误码要可读 ---------- */
+
+console.log('\n5) 网络错误码可读性');
+{
+  const s = summarizeResponse({ status: 0, code: 'ECONNRESET', msg: 'read ECONNRESET' });
+  check('ECONNRESET 不再被打码', s.code, 'ECONNRESET');
+  check('网络错误原因保留', s.msg, 'read ECONNRESET');
+}
+{
+  const s = summarizeResponse({ status: 0, code: 'abcdefghijklmnopqrstuvwxyz0123456789', msg: 'x' });
+  check('长串疑似凭证仍然打码', s.code, '[REDACTED]');
+}
+
 console.log(`\n脱敏与失败原因：${pass} 项通过，${fail} 项失败`);
 if (fail) process.exitCode = 1;

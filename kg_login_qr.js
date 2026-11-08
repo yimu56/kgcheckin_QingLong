@@ -115,7 +115,7 @@ async function main() {
     if (result.api) {
       console.log('[成功] 已写入青龙环境变量 USERINFO');
     } else {
-      console.log('[成功] 已写入本地快照 qinglong/userinfo.json（签到脚本会自动读取）');
+      console.log('[成功] 已写入本地快照 userinfo.json（仓库根目录，签到脚本会自动读取）');
       console.log('[提示] 如需写入面板环境变量，请配置 QL_CLIENT_ID / QL_CLIENT_SECRET');
       console.log(`[提示] 也可手动把下面内容填到环境变量 USERINFO：\n${JSON.stringify(list)}`);
     }

@@ -8,6 +8,7 @@
  *   KG_RANDOM_DELAY_MIN      启动后随机延迟下限（分钟），默认 1
  *   KG_RANDOM_DELAY_MAX      启动后随机延迟上限（分钟），默认 60；两者都为 0 时关闭随机延迟
  *   KG_REFRESH_WEEKDAY       周几刷新 token（0=周日），默认 0，设为 -1 关闭
+ *   KG_REFRESH_DAYS          距上次刷新满几天就续期，默认 3；设为 0 或 -1 关闭按天刷新
  *   KG_NOTIFY                通知方式：both / ql / custom / none，默认 both
  *   QL_CLIENT_ID / QL_CLIENT_SECRET   可选，用于自动回写青龙环境变量
  *
@@ -18,7 +19,7 @@ const { call, cookieOf } = require('./lib/kgapi');
 const { readUserInfo, saveUserInfo } = require('./lib/qlenv');
 const { sendNotify } = require('./lib/notify');
 const { pickRandomDelayMs } = require('./lib/schedule');
-const { maskDisplayName, maskIdentifier, summarizeResponse } = require('./lib/safelog');
+const { maskDisplayName, maskIdentifier, summarizeResponse, errorTextOf } = require('./lib/safelog');
 
 const LOG = {
   info: (m) => console.log(`[信息] ${m}`),
@@ -93,6 +94,7 @@ async function main() {
   const claimTimes = intEnv('KG_CLAIM_TIMES', 8);
   const claimInterval = intEnv('KG_CLAIM_INTERVAL', 30);
   const refreshWeekday = intEnv('KG_REFRESH_WEEKDAY', 0);
+  const refreshDays = intEnv('KG_REFRESH_DAYS', 3);
 
   const results = [];
   const errorMsg = {};
@@ -106,9 +108,16 @@ async function main() {
 
       if (detail?.data?.nickname == null) {
         const safeUserId = maskIdentifier(user.userid);
-        LOG.err(`token 过期或账号不存在，userid: ${safeUserId}`);
-        errorMsg[safeUserId] = { msg: `token过期或账号不存在, userid: ${safeUserId}`, data: summarizeResponse(detail) };
-        results.push({ nickname: safeUserId, status: '失败', listen: '账号不存在', vipClaim: `0/${claimTimes}`, vipExpiry: '未知', error: 'token过期或账号不存在' });
+        const bizCode = detail?.error_code ?? detail?.errcode;
+        const reason = errorTextOf(detail);
+        // 有明确业务错误码时按业务失败展示；网络错误已由 lib/kgapi 抛出，
+        // 不会再混进这里被误判成「token 过期」。
+        const label = bizCode !== undefined
+          ? `账号信息获取失败（error_code=${bizCode}${reason ? `，${reason}` : ''}）`
+          : `token 过期或账号不存在${reason ? `（${reason}）` : ''}`;
+        LOG.err(`${label}，userid: ${safeUserId}`);
+        errorMsg[safeUserId] = { msg: label, data: summarizeResponse(detail) };
+        results.push({ nickname: safeUserId, status: '失败', listen: '账号信息失败', vipClaim: `0/${claimTimes} 次`, vipExpiry: '未知', error: label });
         hasError = true;
         continue;
       }
@@ -116,14 +125,31 @@ async function main() {
       const nickname = maskDisplayName(detail.data.nickname);
       LOG.info(`账号 ${nickname} 开始签到...`);
 
-      // 定期刷新 token（默认每周日），刷新后本次请求也用新 token
-      if (refreshWeekday >= 0 && today.getDay() === refreshWeekday) {
-        const refreshed = await call('login_token', { cookie, token: user.token, userid: user.userid });
-        if (refreshed?.status === 1 && refreshed?.data?.token && refreshed.data.token !== user.token) {
-          user.token = refreshed.data.token;
-          cookie.token = String(user.token);
-          needRefresh = true;
-          LOG.warn(`账号 ${nickname} 已刷新 token`);
+      // token 续期：保留原来的「周几刷新」，再加一条「距上次刷新满 N 天」。
+      // 酷狗 token 实际有效期可能只有几天，只等周日刷新会漏掉。
+      // _refreshAt 记在本地快照里，回写面板环境变量时会被剥离。
+      const weekdayHit = refreshWeekday >= 0 && today.getDay() === refreshWeekday;
+      const lastRefreshAt = Number(user._refreshAt) || 0;
+      const dueHit = refreshDays > 0 && Date.now() - lastRefreshAt >= refreshDays * 86400000;
+      if (weekdayHit || dueHit) {
+        // 续期只是加固手段，失败不能连累本次签到（领取类接口不重试，网络错误会抛出）
+        try {
+          const refreshed = await call('login_token', { cookie, token: user.token, userid: user.userid });
+          if (refreshed?.status === 1 && refreshed?.data?.token) {
+            if (refreshed.data.token !== user.token) {
+              user.token = refreshed.data.token;
+              cookie.token = String(user.token);
+              LOG.warn(`账号 ${nickname} 已刷新 token`);
+            } else {
+              LOG.info(`账号 ${nickname} token 仍有效，无需更换`);
+            }
+            user._refreshAt = Date.now();
+            needRefresh = true;
+          } else {
+            LOG.warn(`账号 ${nickname} token 刷新未成功：${errorTextOf(refreshed) || '服务端未返回新 token'}`);
+          }
+        } catch (e) {
+          LOG.warn(`账号 ${nickname} token 刷新请求失败（不影响本次签到）：${(e && e.message) || e}`);
         }
       }
 
@@ -147,6 +173,7 @@ async function main() {
       LOG.info('开始领取 VIP...');
       let claimCount = 0;
       let claimTotal = 0;
+      let adExhausted = false;
       for (let i = 1; i <= claimTimes; i++) {
         const ad = await call('youth_vip', { cookie });
         claimTotal = i;
@@ -156,6 +183,7 @@ async function main() {
           if (i !== claimTimes) await delay(claimInterval * 1000);
         } else if (ad.error_code === 30002) {
           LOG.ok('今天次数已用光');
+          adExhausted = true;
           break;
         } else {
           LOG.err(`第 ${i} 次领取失败`);
@@ -178,20 +206,29 @@ async function main() {
         hasError = true;
       }
 
+      // 「今日已领取」+「次数已用光」都表示当天已完成，不该算失败，
+      // 否则通知会变成「标题成功、正文成功 0 失败 1」这种自相矛盾的结果。
+      const listenDone = listenStatus === '成功' || listenStatus === '今日已领取';
+      const claimDone = claimCount > 0 || adExhausted;
       results.push({
         nickname,
-        status: listenStatus === '失败' || claimCount === 0 ? '部分失败' : '成功',
+        status: listenDone && claimDone ? '成功' : '部分失败',
         listen: listenStatus,
-        vipClaim: `${claimCount}/${claimTotal}`,
+        vipClaim: adExhausted && claimCount === 0 ? '今日已领完' : `${claimCount}/${claimTotal} 次`,
         vipExpiry,
         error: '',
       });
     } catch (err) {
       const safeUserId = maskIdentifier(user.userid || '未知');
       const msg = err && err.message ? err.message : String(err);
-      LOG.err(`账号 ${safeUserId} 处理异常：${msg}`);
-      errorMsg[safeUserId] = { msg: '处理异常', error: msg };
-      results.push({ nickname: safeUserId, status: '失败', listen: '异常', vipClaim: `0/${claimTimes}`, vipExpiry: '未知', error: msg });
+      const label = err && err.networkError ? '网络请求失败（已重试）' : '处理异常';
+      LOG.err(`账号 ${safeUserId} ${label}：${msg}`);
+      errorMsg[safeUserId] = {
+        msg: label,
+        error: msg,
+        ...(err && err.code ? { code: String(err.code) } : {}),
+      };
+      results.push({ nickname: safeUserId, status: '失败', listen: '异常', vipClaim: `0/${claimTimes} 次`, vipExpiry: '未知', error: msg });
       hasError = true;
     }
   }
@@ -208,7 +245,7 @@ async function main() {
   const successCount = results.filter((r) => r.status === '成功').length;
   content += `✅ 成功: ${successCount}  ❌ 失败: ${results.length - successCount}\n`;
   for (const r of results) {
-    content += `\n【${r.nickname}】\n  🎵 听歌领取: ${r.listen}\n  🎁 VIP领取: ${r.vipClaim} 次\n  ⏰ VIP到期: ${r.vipExpiry}\n`;
+    content += `\n【${r.nickname}】\n  🎵 听歌领取: ${r.listen}\n  🎁 VIP领取: ${r.vipClaim}\n  ⏰ VIP到期: ${r.vipExpiry}\n`;
     if (r.error) content += `  ⚠️ 错误: ${r.error}\n`;
   }
 

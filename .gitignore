@@ -10,6 +10,11 @@ qrkeys.json
 .env
 .env.*
 
+# 抓包 / 调试产物（可能含登录凭证，禁止提交）
+*.har
+*.pcap
+*.pcapng
+
 # 系统 / IDE
 .DS_Store
 Thumbs.db

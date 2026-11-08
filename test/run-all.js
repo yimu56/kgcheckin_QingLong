@@ -11,7 +11,7 @@
 const path = require('node:path');
 const cp = require('node:child_process');
 
-const FILES = ['schedule.test.js', 'safelog.test.js', 'notify.test.js', 'api_config.test.js', 'api_retry.test.js'];
+const FILES = ['schedule.test.js', 'safelog.test.js', 'notify.test.js', 'api_config.test.js', 'api_retry.test.js', 'network_error.test.js'];
 
 let failed = 0;
 for (const file of FILES) {
